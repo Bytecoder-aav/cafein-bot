@@ -8,14 +8,19 @@ from telegram.ext import (
 
 BOT_TOKEN  = os.environ.get("BOT_TOKEN", "")
 ADMIN_CHAT = int(os.environ.get("CHAT_ID_ADMIN", "0"))
+# Окремо можна задати user_id адміна, якщо відрізняється від chat_id
+ADMIN_USER_ID = int(os.environ.get("ADMIN_USER_ID", os.environ.get("CHAT_ID_ADMIN", "0")))
 
 logging.basicConfig(format="%(asctime)s [%(levelname)s] %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ── СТАНИ ──
+# ── СТАНИ (тільки для клієнтського ConversationHandler) ──
 (SELECT_CAT, SELECT_DRINKS, SELECT_QTY,
- SELECT_TIME, CUSTOM_TIME, CONFIRM,
- ADM_PANEL, ADM_ORDER, ADM_MSG) = range(9)
+ SELECT_TIME, CUSTOM_TIME, CONFIRM) = range(6)
+
+# ── Глобальний стан "адмін пише повідомлення клієнту" ──
+# Зберігаємо в bot_data щоб не залежати від conversation state
+ADM_WRITING_MSG = "adm_writing_msg"
 
 # ── МЕНЮ ──
 MENU = {
@@ -39,12 +44,11 @@ MENU = {
 CAT_EMOJI = {"Кава":"☕","На рослинній основі":"🌿","Не кава":"🍵","Перекуси":"🥪"}
 CATS = list(MENU.keys())
 
-# ── ЗАМОВЛЕННЯ (без номерів) ──
+# ── ЗАМОВЛЕННЯ ──
 orders: dict[str, dict] = {}
 
 import random, string
 def new_id() -> str:
-    """Короткий читабельний ID: CAF-X7K2"""
     chars = string.ascii_uppercase + string.digits
     suffix = "".join(random.choices(chars, k=4))
     return f"CAF-{suffix}"
@@ -58,7 +62,14 @@ STATUS = {
 }
 
 # ══════════════════════════════
-#  КЛАВІАТУРИ  (префікси: клієнт=c/d/p/m/t/y; адмін=A)
+#  ПЕРЕВІРКА АДМІНА
+# ══════════════════════════════
+def is_adm(u):
+    uid = getattr(u, "id", 0)
+    return uid == ADMIN_USER_ID or uid == ADMIN_CHAT
+
+# ══════════════════════════════
+#  КЛАВІАТУРИ
 # ══════════════════════════════
 def kb_cats(cart):
     total = sum(v["q"] for v in cart.values())
@@ -156,7 +167,7 @@ def kb_adm_order(oid):
     if s not in ("done","cancelled"):
         rows.append([InlineKeyboardButton("✉️ Написати клієнту",            callback_data=f"A|do|msg|{oid}")])
         rows.append([InlineKeyboardButton("❌ Скасувати замовлення",        callback_data=f"A|do|cancel|{oid}")])
-    rows.append([InlineKeyboardButton("◀️ До списку", callback_data="A|back|")])
+    rows.append([InlineKeyboardButton("◀️ До списку", callback_data="A|list|")])
     return InlineKeyboardMarkup(rows)
 
 # ══════════════════════════════
@@ -168,7 +179,7 @@ def fmt_order(o, adm=False):
     lines = []
     if adm:
         lines += [
-            f"🔔 <b>НОВЕ ЗАМОВЛЕННЯ</b>  {STATUS[o['s']]}",
+            f"🔔 <b>ЗАМОВЛЕННЯ  #{o['id']}</b>  {STATUS[o['s']]}",
             f"👤 {o['u']['name']}" + (f" (@{o['u']['un']})" if o["u"].get("un") else ""),
             f"🕐 {o['at']}", ""
         ]
@@ -188,7 +199,7 @@ def fmt_cart(cart):
     return "\n".join(lines)
 
 # ══════════════════════════════
-#  КЛІЄНТ — хендлери (callback pattern: ^c\|)
+#  КЛІЄНТ — хендлери
 # ══════════════════════════════
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data.clear()
@@ -202,23 +213,20 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def client_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
-    parts = q.data.split("|")          # ["c", action, param]
+    parts = q.data.split("|")
     action = parts[1] if len(parts) > 1 else ""
     param  = parts[2] if len(parts) > 2 else ""
     cart   = ctx.user_data.setdefault("cart", {})
     state  = ctx.user_data.get("state", SELECT_CAT)
 
-    # ── Скасування ──
     if action == "cancel":
         await q.edit_message_text("❌ Скасовано. /start — почати знову.")
         ctx.user_data.clear()
         return ConversationHandler.END
 
-    # ── noop ──
     if action == "noop":
         return state
 
-    # ── Категорії ──
     if action == "cat":
         ci  = int(param)
         cat = CATS[ci]
@@ -236,7 +244,6 @@ async def client_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                   parse_mode="HTML", reply_markup=kb_cats(cart))
         return SELECT_CAT
 
-    # ── Напій ──
     if action == "drink":
         ci, ii = map(int, param.split("_"))
         cat    = CATS[ci]
@@ -248,7 +255,6 @@ async def client_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_reply_markup(reply_markup=kb_drinks(ci, cart))
         return SELECT_DRINKS
 
-    # ── Кошик ──
     if action == "cart":
         ctx.user_data["state"] = SELECT_QTY
         await q.edit_message_text("🛒 <b>Ваш кошик:</b>\n\n" + fmt_cart(cart),
@@ -280,7 +286,6 @@ async def client_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                   parse_mode="HTML", reply_markup=kb_time())
         return SELECT_TIME
 
-    # ── Час ──
     if action == "t":
         t_map = {"5": "через 5 хвилин", "10": "через 10 хвилин", "20": "через 20 хвилин"}
         if param in t_map:
@@ -296,7 +301,6 @@ async def client_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode="HTML")
             return CUSTOM_TIME
 
-    # ── Підтвердження ──
     if action == "confirm":
         if param == "time":
             ctx.user_data["state"] = SELECT_TIME
@@ -341,28 +345,32 @@ async def _place_order(q, ctx):
     await q.edit_message_text(
         f"✅ <b>Замовлення прийнято!</b>\n\n"
         f"{fmt_order(o)}\n\n"
-        f"⏳ <b>Взято в роботу — очікуйте повідомлення коли буде готово ☕</b>",
+        f"⏳ <b>Очікуйте повідомлення коли буде готово ☕</b>",
         parse_mode="HTML"
     )
     ctx.user_data.clear()
     return ConversationHandler.END
 
 # ══════════════════════════════
-#  АДМІН — хендлери (callback pattern: ^A\|)
+#  АДМІН — хендлери (БЕЗ ConversationHandler!)
+#  Реєструються глобально, тому спрацьовують завжди
 # ══════════════════════════════
-def is_adm(u): return getattr(u, "id", 0) == ADMIN_CHAT
+async def ntf(bot, cid, text):
+    try:
+        await bot.send_message(chat_id=cid, text=text, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"ntf: {e}")
 
 async def cmd_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not is_adm(update.effective_user):
         await update.message.reply_text("⛔ Доступ заборонено.")
-        return ConversationHandler.END
+        return
     active = [o for o in orders.values() if o["s"] not in ("done","cancelled")]
     await update.message.reply_text(
         f"👨‍💼 <b>Адмін панель Cafe!n</b>\n\n"
         f"📋 Активних: <b>{len(active)}</b>  /  Всього: <b>{len(orders)}</b>",
         parse_mode="HTML", reply_markup=kb_adm_list()
     )
-    return ADM_PANEL
 
 async def cmd_orders(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not is_adm(update.effective_user): return
@@ -377,119 +385,128 @@ async def cmd_orders(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"📋 Всього за сесію: <b>{len(orders)}</b>",
         parse_mode="HTML", reply_markup=kb_adm_list()
     )
-    return ADM_PANEL
 
-async def adm_panel_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def adm_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Єдиний глобальний обробник ВСІХ адмін-кнопок (префікс A|)"""
     q = update.callback_query
     if not is_adm(update.effective_user):
         await q.answer("⛔ Доступ заборонено", show_alert=True)
-        return ADM_PANEL
+        return
     await q.answer()
-    parts  = q.data.split("|")   # ["A", action, param]
+
+    parts  = q.data.split("|")
     action = parts[1] if len(parts) > 1 else ""
     param  = parts[2] if len(parts) > 2 else ""
-
-    if action in ("f", "back") or action == "f":
-        f_map = {"new":"new","accepted":"accepted","ready":"ready","done":"done","all":None,"refresh":None}
-        fs = f_map.get(param)
-        active = [o for o in orders.values() if o["s"] not in ("done","cancelled")]
-        await q.edit_message_text(
-            f"📋 Активних: <b>{len(active)}</b>  /  Всього: <b>{len(orders)}</b>",
-            parse_mode="HTML", reply_markup=kb_adm_list(fs)
-        )
-        return ADM_PANEL
-
-    if action == "view":
-        oid = param
-        o   = orders.get(oid)
-        if not o:
-            await q.answer("Замовлення не знайдено", show_alert=True)
-            return ADM_PANEL
-        ctx.user_data["co"] = oid
-        await q.edit_message_text(fmt_order(o, adm=True), parse_mode="HTML",
-                                  reply_markup=kb_adm_order(oid))
-        return ADM_ORDER
-
-    return ADM_PANEL
-
-async def ntf(ctx, cid, text):
-    try:
-        await ctx.bot.send_message(chat_id=cid, text=text, parse_mode="HTML")
-    except Exception as e:
-        logger.error(f"ntf: {e}")
-
-async def adm_order_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    if not is_adm(update.effective_user):
-        await q.answer("⛔ Доступ заборонено", show_alert=True)
-        return ADM_ORDER
-    await q.answer()
-    parts  = q.data.split("|")   # ["A", "do", action, oid]  OR ["A", "back", ""]
-    action = parts[1] if len(parts) > 1 else ""
-    sub    = parts[2] if len(parts) > 2 else ""
     oid    = parts[3] if len(parts) > 3 else ""
 
-    if action == "back":
+    # ── Список / фільтри / назад ──
+    if action in ("f", "list", "back"):
+        f_map = {"new":"new","accepted":"accepted","ready":"ready","done":"done","all":None,"refresh":None}
+        fs = f_map.get(param) if action == "f" else None
         active = [o for o in orders.values() if o["s"] not in ("done","cancelled")]
-        await q.edit_message_text(
-            f"📋 Активних: <b>{len(active)}</b>  /  Всього: <b>{len(orders)}</b>",
-            parse_mode="HTML", reply_markup=kb_adm_list()
-        )
-        return ADM_PANEL
+        try:
+            await q.edit_message_text(
+                f"📋 Активних: <b>{len(active)}</b>  /  Всього: <b>{len(orders)}</b>",
+                parse_mode="HTML", reply_markup=kb_adm_list(fs)
+            )
+        except Exception:
+            pass
+        return
 
+    # ── Переглянути конкретне замовлення ──
+    if action == "view":
+        o = orders.get(param)
+        if not o:
+            await q.answer("Замовлення не знайдено", show_alert=True)
+            return
+        try:
+            await q.edit_message_text(fmt_order(o, adm=True), parse_mode="HTML",
+                                      reply_markup=kb_adm_order(param))
+        except Exception:
+            pass
+        return
+
+    # ── Дії з замовленням ──
     if action == "do":
         o = orders.get(oid)
         if not o:
-            await q.answer("Не знайдено", show_alert=True)
-            return ADM_ORDER
+            await q.answer("Замовлення не знайдено", show_alert=True)
+            return
 
-        if sub == "accept":
+        if param == "accept":
             o["s"] = "accepted"
-            await ntf(ctx, o["u"]["cid"],
-                f"👨‍🍳 <b>Ваше замовлення взято в роботу!</b>\n\n"
+            await ntf(ctx.bot, o["u"]["cid"],
+                f"👨‍🍳 <b>Ваше замовлення #{oid} взято в роботу!</b>\n\n"
                 f"Час готовності: <b>{o['t']}</b>\nОчікуйте — повідомимо коли буде готово ☕")
 
-        elif sub == "ready":
+        elif param == "ready":
             o["s"] = "ready"
-            await ntf(ctx, o["u"]["cid"],
-                f"✅ <b>Ваше замовлення готове!</b>\n\n"
+            await ntf(ctx.bot, o["u"]["cid"],
+                f"✅ <b>Ваше замовлення #{oid} готове!</b>\n\n"
                 f"Можете забирати ☕\n📍 просп. Героїв Дніпра, 67")
 
-        elif sub == "done":
+        elif param == "done":
             o["s"] = "done"
-            await ntf(ctx, o["u"]["cid"],
-                f"📦 <b>Замовлення видано. Дякуємо!</b>\n\n"
+            await ntf(ctx.bot, o["u"]["cid"],
+                f"📦 <b>Замовлення #{oid} видано. Дякуємо!</b>\n\n"
                 f"Раді бачити вас у Cafe!n ❤️\n/start — нове замовлення")
 
-        elif sub == "cancel":
+        elif param == "cancel":
             o["s"] = "cancelled"
-            await ntf(ctx, o["u"]["cid"],
-                f"❌ <b>На жаль, ваше замовлення скасовано.</b>\n\n"
+            await ntf(ctx.bot, o["u"]["cid"],
+                f"❌ <b>На жаль, ваше замовлення #{oid} скасовано.</b>\n\n"
                 f"З питань — звертайтесь до нас.\n/start — нове замовлення")
 
-        elif sub == "msg":
-            ctx.user_data["mo"] = oid
-            await q.edit_message_text(
-                f"✉️ Напишіть повідомлення клієнту:\n(/skip — скасувати)")
-            return ADM_MSG
+        elif param == "msg":
+            # Зберігаємо в bot_data (глобально для адміна)
+            ctx.bot_data[f"adm_msg_{update.effective_user.id}"] = oid
+            try:
+                await q.edit_message_text(
+                    f"✉️ Напишіть повідомлення клієнту для замовлення <b>#{oid}</b>:\n"
+                    f"(або відправте /skip щоб скасувати)",
+                    parse_mode="HTML"
+                )
+            except Exception:
+                pass
+            return
 
-        await q.edit_message_text(fmt_order(o, adm=True), parse_mode="HTML",
-                                  reply_markup=kb_adm_order(oid))
-        return ADM_ORDER
-
-    return ADM_ORDER
+        # Оновлюємо повідомлення після дії
+        try:
+            await q.edit_message_text(fmt_order(o, adm=True), parse_mode="HTML",
+                                      reply_markup=kb_adm_order(oid))
+        except Exception:
+            pass
+        return
 
 async def adm_msg_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Обробник тексту від адміна (коли він пише повідомлення клієнту)"""
+    if not is_adm(update.effective_user):
+        return
+
+    adm_key = f"adm_msg_{update.effective_user.id}"
+    oid = ctx.bot_data.get(adm_key)
+    if not oid:
+        return  # Адмін не в режимі написання — ігноруємо
+
     txt = update.message.text
-    oid = ctx.user_data.get("mo")
     o   = orders.get(oid)
+
     if txt == "/skip" or not o:
-        await update.message.reply_text("Скасовано.", reply_markup=kb_adm_list())
-        return ADM_PANEL
-    await ntf(ctx, o["u"]["cid"],
+        ctx.bot_data.pop(adm_key, None)
+        active = [x for x in orders.values() if x["s"] not in ("done","cancelled")]
+        await update.message.reply_text(
+            f"Скасовано.\n\n📋 Активних: <b>{len(active)}</b>  /  Всього: <b>{len(orders)}</b>",
+            parse_mode="HTML", reply_markup=kb_adm_list()
+        )
+        return
+
+    await ntf(ctx.bot, o["u"]["cid"],
               f"💬 <b>Повідомлення від Cafe!n:</b>\n\n{txt}")
-    await update.message.reply_text("✅ Надіслано.", reply_markup=kb_adm_order(oid))
-    return ADM_ORDER
+    ctx.bot_data.pop(adm_key, None)
+    await update.message.reply_text(
+        f"✅ Повідомлення надіслано клієнту.\n\n{fmt_order(o, adm=True)}",
+        parse_mode="HTML", reply_markup=kb_adm_order(oid)
+    )
 
 # ══════════════════════════════
 #  ЗАГАЛЬНІ КОМАНДИ
@@ -518,7 +535,7 @@ def main():
 
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # Клієнтський ConversationHandler — всі callback мають префікс "c|"
+    # Клієнтський ConversationHandler — тільки клієнтські кнопки
     client = ConversationHandler(
         entry_points=[CommandHandler("start", cmd_start)],
         states={
@@ -536,29 +553,24 @@ def main():
         allow_reentry=True,
     )
 
-    # Адмін ConversationHandler — всі callback мають префікс "A|"
-    admin = ConversationHandler(
-        entry_points=[
-            CommandHandler("admin",  cmd_admin),
-            CommandHandler("orders", cmd_orders),
-        ],
-        states={
-            ADM_PANEL: [CallbackQueryHandler(adm_panel_cb, pattern=r"^A\|")],
-            ADM_ORDER: [CallbackQueryHandler(adm_order_cb, pattern=r"^A\|")],
-            ADM_MSG:   [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, adm_msg_handler),
-                CommandHandler("skip", adm_msg_handler),
-            ],
-        },
-        fallbacks=[CommandHandler("cancel", cmd_cancel)],
-        allow_reentry=True,
-    )
-
     app.add_handler(client)
-    app.add_handler(admin)
+
+    # Адмін — ГЛОБАЛЬНІ хендлери (не ConversationHandler!)
+    # Важливо: реєструємо ДО будь-яких catch-all хендлерів
+    app.add_handler(CommandHandler("admin",  cmd_admin))
+    app.add_handler(CommandHandler("orders", cmd_orders))
+    app.add_handler(CallbackQueryHandler(adm_cb, pattern=r"^A\|"))
+
+    # Адмін повідомлення клієнту — фільтруємо тільки якщо адмін в режимі написання
+    app.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND & filters.Chat(ADMIN_CHAT),
+        adm_msg_handler
+    ))
+
     app.add_handler(CommandHandler("help", cmd_help))
 
-    logger.info("✅ Cafe!n бот v3 запущено")
+    logger.info("✅ Cafe!n бот v4 запущено")
+    logger.info(f"   ADMIN_CHAT={ADMIN_CHAT}, ADMIN_USER_ID={ADMIN_USER_ID}")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
