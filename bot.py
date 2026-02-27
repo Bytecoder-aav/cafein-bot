@@ -99,10 +99,12 @@ def kb_drinks(ci, cart):
             q_l = cart.get(f"{base_key}_l", {}).get("q", 0)
             mk_s = f" ✅×{q_s}" if q_s else ""
             mk_l = f" ✅×{q_l}" if q_l else ""
-            # Два варіанти на одному рядку: S і L
+            # Рядок 1: назва (неактивна кнопка)
+            rows.append([InlineKeyboardButton(f"  {name}", callback_data="c|noop|")])
+            # Рядок 2: S і L з цінами
             rows.append([
-                InlineKeyboardButton(f"{name} S — {p1}грн{mk_s}", callback_data=f"c|drink|{base_key}_s"),
-                InlineKeyboardButton(f"L — {p2}грн{mk_l}",         callback_data=f"c|drink|{base_key}_l"),
+                InlineKeyboardButton(f"S — {p1} грн{mk_s}", callback_data=f"c|drink|{base_key}_s"),
+                InlineKeyboardButton(f"L — {p2} грн{mk_l}", callback_data=f"c|drink|{base_key}_l"),
             ])
         else:
             q = cart.get(base_key, {}).get("q", 0)
