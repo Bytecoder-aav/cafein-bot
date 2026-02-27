@@ -523,7 +523,7 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "/start  — Зробити замовлення\n"
         "/help   — Довідка\n\n"
         "📍 просп. Героїв Дніпра, 67, Горішні Плавні\n"
-        "🕐 Пн–Нд: 09:00 – 18:00",
+        "🕐 Пн–Нд: 10:00 – 18:00",
         parse_mode="HTML")
 
 async def cmd_test(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
