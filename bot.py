@@ -333,15 +333,17 @@ async def _place_order(q, ctx):
         "at":   now,
     }
     orders[oid] = o
+    logger.info(f"Нове замовлення {oid} від {user.full_name} (id={user.id}). Надсилаємо адміну в chat_id={ADMIN_CHAT}")
     try:
-        await q.get_bot().send_message(
+        sent = await q.get_bot().send_message(
             chat_id=ADMIN_CHAT,
             text=fmt_order(o, adm=True),
             parse_mode="HTML",
             reply_markup=kb_adm_order(oid)
         )
+        logger.info(f"✅ Повідомлення адміну надіслано, message_id={sent.message_id}")
     except Exception as e:
-        logger.error(f"adm send: {e}")
+        logger.error(f"❌ Помилка надсилання адміну: {e}")
     await q.edit_message_text(
         f"✅ <b>Замовлення прийнято!</b>\n\n"
         f"{fmt_order(o)}\n\n"
@@ -389,7 +391,9 @@ async def cmd_orders(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def adm_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Єдиний глобальний обробник ВСІХ адмін-кнопок (префікс A|)"""
     q = update.callback_query
+    logger.info(f"adm_cb: отримано callback '{q.data}' від user_id={update.effective_user.id}")
     if not is_adm(update.effective_user):
+        logger.warning(f"adm_cb: відмовлено user_id={update.effective_user.id} (ADMIN_USER_ID={ADMIN_USER_ID}, ADMIN_CHAT={ADMIN_CHAT})")
         await q.answer("⛔ Доступ заборонено", show_alert=True)
         return
     await q.answer()
@@ -481,7 +485,7 @@ async def adm_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def adm_msg_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Обробник тексту від адміна (коли він пише повідомлення клієнту)"""
     if not is_adm(update.effective_user):
-        return
+        return  # Не адмін — ігноруємо
 
     adm_key = f"adm_msg_{update.effective_user.id}"
     oid = ctx.bot_data.get(adm_key)
@@ -519,6 +523,23 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "📍 просп. Героїв Дніпра, 67, Горішні Плавні\n"
         "🕐 Пн–Нд: 09:00 – 18:00",
         parse_mode="HTML")
+
+async def cmd_test(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Діагностична команда — показує ваш chat_id і user_id"""
+    uid  = update.effective_user.id
+    cid  = update.effective_chat.id
+    name = update.effective_user.full_name
+    adm  = is_adm(update.effective_user)
+    await update.message.reply_text(
+        f"🔍 <b>Діагностика</b>\n\n"
+        f"👤 Ім'я: <b>{name}</b>\n"
+        f"🆔 User ID: <code>{uid}</code>\n"
+        f"💬 Chat ID: <code>{cid}</code>\n\n"
+        f"⚙️ ADMIN_CHAT в боті: <code>{ADMIN_CHAT}</code>\n"
+        f"⚙️ ADMIN_USER_ID в боті: <code>{ADMIN_USER_ID}</code>\n\n"
+        f"{'✅ Ви маєте адмін-доступ' if adm else '❌ Ви НЕ маєте адмін-доступу'}",
+        parse_mode="HTML"
+    )
 
 async def cmd_cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data.clear()
@@ -561,13 +582,15 @@ def main():
     app.add_handler(CommandHandler("orders", cmd_orders))
     app.add_handler(CallbackQueryHandler(adm_cb, pattern=r"^A\|"))
 
-    # Адмін повідомлення клієнту — фільтруємо тільки якщо адмін в режимі написання
+    # Адмін повідомлення клієнту — перевіряємо is_adm() всередині хендлера
+    # НЕ використовуємо filters.Chat() бо він може не спрацювати залежно від типу чату
     app.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND & filters.Chat(ADMIN_CHAT),
+        filters.TEXT & ~filters.COMMAND,
         adm_msg_handler
-    ))
+    ), group=1)  # group=1 щоб не конфліктувати з client ConversationHandler
 
     app.add_handler(CommandHandler("help", cmd_help))
+    app.add_handler(CommandHandler("test", cmd_test))
 
     logger.info("✅ Cafe!n бот v4 запущено")
     logger.info(f"   ADMIN_CHAT={ADMIN_CHAT}, ADMIN_USER_ID={ADMIN_USER_ID}")
