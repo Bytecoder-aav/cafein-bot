@@ -47,11 +47,13 @@ CATS = list(MENU.keys())
 # ── ЗАМОВЛЕННЯ ──
 orders: dict[str, dict] = {}
 
-import random, string
+_order_counter: dict[str, int] = {}
+
 def new_id() -> str:
-    chars = string.ascii_uppercase + string.digits
-    suffix = "".join(random.choices(chars, k=4))
-    return f"CAF-{suffix}"
+    """ID формату #270225-001"""
+    today = datetime.now().strftime("%d%m%y")
+    _order_counter[today] = _order_counter.get(today, 0) + 1
+    return f"{today}-{_order_counter[today]:03d}"
 
 STATUS = {
     "new":       "🆕 Нове",
