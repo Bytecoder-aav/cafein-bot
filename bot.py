@@ -424,10 +424,10 @@ async def adm_order_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer("⛔ Доступ заборонено", show_alert=True)
         return ADM_ORDER
     await q.answer()
-    parts  = q.data.split("|")   # ["A", action, sub, oid]  OR ["A", "back", ""]
-    action = parts[1] if len(parts) > 1 else ""  
-    sub    = parts[2] if len(parts) > 2 else ""  
-    oid    = parts[3] if len(parts) > 3 else ""  
+    parts  = q.data.split("|")   # ["A", "do", action, oid]  OR ["A", "back", ""]
+    action = parts[1] if len(parts) > 1 else ""
+    sub    = parts[2] if len(parts) > 2 else ""
+    oid    = parts[3] if len(parts) > 3 else ""
 
     if action == "back":
         active = [o for o in orders.values() if o["s"] not in ("done","cancelled")]
