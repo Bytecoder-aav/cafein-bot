@@ -48,9 +48,9 @@ client_msg_map: dict = {}
 
 STATUS = {
     "new":       "🆕 Нове",
-    "accepted":  "👨‍🍳 В роботі",
+    "accepted":  "🤵 В роботі",
     "ready":     "✅ Готове",
-    "done":      "📦 Видано",
+    "done":      "🛍️ Видано",
     "cancelled": "❌ Скасовано",
 }
 
@@ -136,7 +136,7 @@ def kb_cart(cart):
 def kb_time():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("⚡ Через 5 хв",  callback_data="c|t|5")],
-        [InlineKeyboardButton("🕐 Через 10 хв", callback_data="c|t|10")],
+        [InlineKeyboardButton("⏳ Через 10 хв", callback_data="c|t|10")],
         [InlineKeyboardButton("🕑 Через 20 хв", callback_data="c|t|20")],
         [InlineKeyboardButton("✏️ Свій час",    callback_data="c|t|custom")],
         [InlineKeyboardButton("◀️ Кошик",       callback_data="c|cart|"),
@@ -163,10 +163,10 @@ def kb_adm_list(fs=None):
         rows.append([InlineKeyboardButton(lbl, callback_data=f"A|view|{o['id']}")])
     rows.append([
         InlineKeyboardButton("🆕",  callback_data="A|f|new"),
-        InlineKeyboardButton("👨‍🍳", callback_data="A|f|accepted"),
+        InlineKeyboardButton("🤵", callback_data="A|f|accepted"),
         InlineKeyboardButton("✅",  callback_data="A|f|ready"),
         InlineKeyboardButton("📋",  callback_data="A|f|all"),
-        InlineKeyboardButton("📦",  callback_data="A|f|done"),
+        InlineKeyboardButton("🛍️",  callback_data="A|f|done"),
         InlineKeyboardButton("🔄",  callback_data="A|f|refresh"),
     ])
     return InlineKeyboardMarkup(rows)
@@ -178,11 +178,11 @@ def kb_adm_order(oid):
         return InlineKeyboardMarkup([])
     s, rows = o["s"], []
     if s == "new":
-        rows.append([InlineKeyboardButton("👨‍🍳 Взяти в роботу",             callback_data=f"A|do|accept|{oid}")])
+        rows.append([InlineKeyboardButton("🤵 Взяти в роботу",             callback_data=f"A|do|accept|{oid}")])
     if s == "accepted":
         rows.append([InlineKeyboardButton("✅ Готове — сповістити клієнта",  callback_data=f"A|do|ready|{oid}")])
     if s == "ready":
-        rows.append([InlineKeyboardButton("📦 Видано",                       callback_data=f"A|do|done|{oid}")])
+        rows.append([InlineKeyboardButton("🛍️ Видано",                       callback_data=f"A|do|done|{oid}")])
     if s not in ("done", "cancelled"):
         rows.append([InlineKeyboardButton("✉️ Написати клієнту",             callback_data=f"A|do|msg|{oid}")])
         rows.append([InlineKeyboardButton("❌ Скасувати замовлення",         callback_data=f"A|do|cancel|{oid}")])
@@ -478,9 +478,9 @@ async def cmd_orders(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"📊 <b>Статистика Cafe!n</b>\n\n"
         f"🆕 Нові:        <b>{c['new']}</b>\n"
-        f"👨‍🍳 В роботі: <b>{c['accepted']}</b>\n"
+        f"🤵 В роботі: <b>{c['accepted']}</b>\n"
         f"✅ Готові:      <b>{c['ready']}</b>\n"
-        f"📦 Видані:      <b>{c['done']}</b>\n"
+        f"🛍️ Видані:      <b>{c['done']}</b>\n"
         f"❌ Скасовані:   <b>{c['cancelled']}</b>\n\n"
         f"📋 Всього за сесію: <b>{len(orders)}</b>",
         parse_mode="HTML", reply_markup=kb_adm_list(),
@@ -538,7 +538,7 @@ async def adm_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if param == "accept":
             o["s"] = "accepted"
             await ntf(ctx.bot, o["u"]["cid"],
-                      f"👨‍🍳 <b>Ваше замовлення #{oid} взято в роботу!</b>\n\n"
+                      f"🤵 <b>Ваше замовлення #{oid} взято в роботу!</b>\n\n"
                       f"Час готовності: <b>{o['t']}</b>\n"
                       f"Очікуйте — повідомимо коли буде готово ☕\n\n"
                       f"<i>Якщо є питання — відповідайте на це повідомлення.</i>",
@@ -556,7 +556,7 @@ async def adm_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         elif param == "done":
             o["s"] = "done"
             await ntf(ctx.bot, o["u"]["cid"],
-                      f"📦 <b>Замовлення #{oid} видано. Дякуємо!</b>\n\n"
+                      f"🛍️ <b>Замовлення #{oid} видано. Дякуємо!</b>\n\n"
                       f"Раді бачити вас у Cafe!n ❤️\n/start — нове замовлення")
 
         elif param == "cancel":
@@ -628,7 +628,7 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "/start  — Зробити замовлення\n"
         "/help   — Довідка\n\n"
         "📍 просп. Героїв Дніпра, 67, Горішні Плавні\n"
-        "🕐 Пн–Нд: 09:00 – 18:00",
+        "🕐 Пн–Нд: 10:00 – 18:00",
         parse_mode="HTML")
 
 
@@ -664,7 +664,7 @@ async def unknown_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "/start  — Зробити замовлення\n"
         "/help   — Довідка\n\n"
         "📍 просп. Героїв Дніпра, 67, Горішні Плавні\n"
-        "🕐 Пн–Нд: 09:00 – 18:00",
+        "🕐 Пн–Нд: 10:00 – 18:00",
         parse_mode="HTML")
 
 
