@@ -7,7 +7,7 @@ from telegram.ext import (
 )
 
 BOT_TOKEN  = os.environ.get("BOT_TOKEN", "")
-ADMIN_CHAT = int(os.environ.get("CHAT_ID_ADMIN", "5294848961"))  # група
+ADMIN_CHAT = int(os.environ.get("CHAT_ID_ADMIN", "-5294848961"))  # група
 ADMIN_IDS  = {8582499564, 7444305927, 782023256}  # адміни (без групи)
 
 logging.basicConfig(format="%(asctime)s [%(levelname)s] %(message)s", level=logging.INFO)
