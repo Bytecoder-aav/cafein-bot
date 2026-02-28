@@ -6,9 +6,9 @@ from telegram.ext import (
     MessageHandler, filters, ContextTypes, ConversationHandler
 )
 
-BOT_TOKEN     = os.environ.get("BOT_TOKEN", "")
-ADMIN_CHAT    = int(os.environ.get("CHAT_ID_ADMIN", "0"))
-ADMIN_USER_ID = int(os.environ.get("ADMIN_USER_ID", os.environ.get("CHAT_ID_ADMIN", "0")))
+BOT_TOKEN  = os.environ.get("BOT_TOKEN", "")
+ADMIN_CHAT = int(os.environ.get("CHAT_ID_ADMIN", "5294848961"))  # група
+ADMIN_IDS  = {8582499564, 7444305927, 782023256}  # адміни (без групи)
 
 logging.basicConfig(format="%(asctime)s [%(levelname)s] %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -62,8 +62,7 @@ def new_id() -> str:
 
 
 def is_adm(u) -> bool:
-    uid = getattr(u, "id", 0)
-    return uid == ADMIN_USER_ID or uid == ADMIN_CHAT
+    return getattr(u, "id", 0) in ADMIN_IDS
 
 
 def has_sizes(price: str) -> bool:
@@ -644,7 +643,7 @@ async def cmd_test(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"🆔 User ID: <code>{uid}</code>\n"
         f"💬 Chat ID: <code>{cid}</code>\n\n"
         f"⚙️ ADMIN_CHAT: <code>{ADMIN_CHAT}</code>\n"
-        f"⚙️ ADMIN_USER_ID: <code>{ADMIN_USER_ID}</code>\n\n"
+        f"⚙️ ADMIN_IDS: <code>{ADMIN_IDS}</code>\n\n"
         f"{'✅ Маєте адмін-доступ' if adm else '❌ Не маєте адмін-доступу'}",
         parse_mode="HTML",
     )
@@ -731,7 +730,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown_text), group=3)
 
     logger.info("✅ Cafe!n бот v5 запущено")
-    logger.info(f"   ADMIN_CHAT={ADMIN_CHAT}, ADMIN_USER_ID={ADMIN_USER_ID}")
+    logger.info(f"   ADMIN_CHAT={ADMIN_CHAT}, ADMIN_IDS={ADMIN_IDS}")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
