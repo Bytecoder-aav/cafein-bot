@@ -1,5 +1,8 @@
 import os, logging
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+KYIV_TZ = ZoneInfo("Europe/Kiev")
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
@@ -33,7 +36,7 @@ MENU = {
         ("Дитячий лате","50/60"),("Какао","60/70"),("Гарячий шоколад","70"),
     ],
     "Перекуси": [
-        ("Тістечко картопля","50"),("Штолен","60"),("Кукіс","70"),("Трайфл","90"),("Курка в лаваші","90"),
+        ("Тістечко картопля","50"),("Хачапурі","50"),("Штолен","60"),("Кукіс","70"),("Трайфл","90"),("Лаваш","90"),
     ],
 }
 CAT_EMOJI = {"Кава": "☕", "На рослинній основі": "🌿", "Не кава": "🍵", "Перекуси": "🥪"}
@@ -56,7 +59,7 @@ STATUS = {
 
 
 def new_id() -> str:
-    today = datetime.now().strftime("%d%m%y")
+    today = datetime.now(KYIV_TZ).strftime("%d%m%y")
     _order_counter[today] = _order_counter.get(today, 0) + 1
     return f"{today}-{_order_counter[today]:03d}"
 
@@ -390,7 +393,7 @@ async def on_custom_time(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def _place_order(q, ctx):
     user = q.from_user
     oid  = new_id()
-    now  = datetime.now().strftime("%H:%M  %d.%m.%Y")
+    now  = datetime.now(KYIV_TZ).strftime("%H:%M  %d.%m.%Y")
     o = {
         "id":   oid,
         "u":    {"id": user.id, "name": user.full_name, "un": user.username, "cid": user.id},
